@@ -23,13 +23,7 @@ void setup() {
 }
 
 void loop() {
-    lightLoop();
-}
-
-void distanceLoop() {
-    unsigned long distance = measureDistanceCm();
-    Serial.println(distance);
-    delay(100);
+    micLoop();
 }
 
 double spreadd = 0;
@@ -80,33 +74,4 @@ int measureMicrophoneDigital() {
 
 double sigmoid(double x, double a, double b) {
     return 1 / (1 + exp(-a * (x - b)));
-}
-
-unsigned long lastMeasurementCm = 0;
-unsigned long measureDistanceCm() {
-    digitalWrite(distanceTriggerPin, HIGH);
-    delayMicroseconds(10);
-    digitalWrite(distanceTriggerPin, LOW);
-
-    unsigned long deltaTus = pulseIn(distanceEchoPin, HIGH, 1e6);
-
-    unsigned long distanceCm = deltaTus * 343 / 20000;
-    if(distanceCm > 1000) {
-        return lastMeasurementCm;
-    } else {
-        lastMeasurementCm = distanceCm;
-        return distanceCm;
-    }
-}
-
-double lightMovingAverage = 0;
-void lightLoop() {
-    int val = analogRead(lightPin);
-    lightMovingAverage = lightMovingAverage + 0.1 * ((double) val - lightMovingAverage);
-    Serial.print(lightMovingAverage);
-    int ledValue = constrain(map(lightMovingAverage, 600, 900, 1023, 0), 0, 1023);
-    Serial.print(", ");
-    Serial.print(ledValue);
-    Serial.println("");
-    analogWrite(ledPin, ledValue);
 }
