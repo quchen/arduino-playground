@@ -32,9 +32,8 @@ void loop() {
     // fourierLoop();
 }
 
-double smoothMicMeasurement = 0;
+double movingMicSpread = 0;
 double sigmoidCenter = 10;
-double movingAverage = 0;
 void micLoop() {
     const long measureWindowMillis = 10;
     const long startTime = millis();
@@ -46,18 +45,16 @@ void micLoop() {
         maximum = max(maximum, val);
     }
     int spread = maximum - minimum;
-    smoothMicMeasurement = smoothMicMeasurement + 0.3 * ((double) spread - smoothMicMeasurement);
+    movingMicSpread = movingMicSpread + 0.1 * ((double) spread - movingMicSpread);
 
-    double sigmoidMovingSpread = 0;
-    movingAverage = movingAverage + 0.33 * (sigmoidMovingSpread - movingAverage);
-    sigmoidMovingSpread = 1023 * sigmoid(movingAverage, 0.95, 1.1 * sigmoidCenter);
+    double movingAverage;
+    movingAverage = 1023 * sigmoid(movingMicSpread, 2., sigmoidCenter);
 
-    // sigmoidMovingSpread = smoothMicMeasurement;
     Serial.print(movingAverage);
 
     analogWrite(ledPin, constrain(movingAverage, 0, 1023));
 
-    sigmoidCenter = sigmoidCenter + 0.01 * (smoothMicMeasurement - sigmoidCenter);
+    sigmoidCenter = sigmoidCenter + 0.05 * (movingMicSpread - sigmoidCenter);
 
     Serial.println("");
 }
