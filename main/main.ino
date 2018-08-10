@@ -1,67 +1,26 @@
-#include <fix_fft.h>
-
-#define MEASUREMENTS_EXP 7
-#define MEASUREMENTS (1 << MEASUREMENTS_EXP)
-
 const int ledPin = 3;
 const int microphonePin = A0;
 double microphoneOffset = 0;
-
-const int distanceTriggerPin = 4;
-const int distanceOutPin = A1;
-const int distanceEchoPin = 5;
-
-const int lightPin = A1;
 
 void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, HIGH);
 
     pinMode(ledPin, OUTPUT);
-    pinMode(distanceTriggerPin, OUTPUT);
-    pinMode(distanceEchoPin, INPUT);
     Serial.begin(115200);
 
-    gaugeMicrophoneAnalog(3000);
+    gaugeMicrophoneAnalog(1000);
 
     digitalWrite(LED_BUILTIN, LOW);
 }
 
 void loop() {
     micLoop();
-    // fourierLoop();
 }
 
-double movingMicSpread = 0;
-double sigmoidCenter = 10;
-void micLoop() {
-    const long measureWindowMillis = 10;
-    const long startTime = millis();
-    int minimum = 1023;
-    int maximum = 0;
-    while(millis() < startTime + measureWindowMillis) {
-        int val = measureMicrophoneDigital();
-        minimum = min(minimum, val);
-        maximum = max(maximum, val);
-    }
-    int spread = maximum - minimum;
-    movingMicSpread = movingMicSpread + 0.1 * ((double) spread - movingMicSpread);
-
-    double movingAverage;
-    movingAverage = 1023 * sigmoid(movingMicSpread, 2., sigmoidCenter);
-
-    Serial.print(movingAverage);
-
-    analogWrite(ledPin, constrain(movingAverage, 0, 1023));
-
-    sigmoidCenter = sigmoidCenter + 0.05 * (movingMicSpread - sigmoidCenter);
-
-    Serial.println("");
-}
-
-void gaugeMicrophoneAnalog(long measureWindowMillis) {
+void gaugeMicrophoneAnalog(unsigned long measureWindowMillis) {
     microphoneOffset = 0;
-    const long startTime = millis();
+    unsigned long startTime = millis();
     double sumOfMeasurements = 0;
     long numMeasurements = 0;
     while(millis() < startTime + measureWindowMillis) {
@@ -82,35 +41,43 @@ int measureMicrophoneDigital() {
     return analogRead(microphonePin);
 }
 
-double sigmoid(double x, double a, double b) {
-    return 1 / (1 + exp(-a * (x - b)));
+double sigmoid(double x, double slope, double center) {
+    return 1 / (1 + exp(-slope * (x - center)));
 }
 
-void measureLoop() {
-    char measurements[MEASUREMENTS];
-    digitalWrite(LED_BUILTIN, HIGH);
-    for(int i = 0; i < MEASUREMENTS; ++i) {
-        measurements[i] = measureMicrophoneDigital() >> 2;
-    }
-    digitalWrite(LED_BUILTIN, LOW);
-    // Serial.println(measurements);
-    for(int i = 0; i < MEASUREMENTS; ++i) {
-       Serial.println((int) measurements[i]);
-    }
-}
+////////////////////////////////////////////////////////////////////////////////
 
-void fourierLoop() {
-    char measurementsReal[MEASUREMENTS];
-    char measurementsImag[MEASUREMENTS];
-    digitalWrite(LED_BUILTIN, HIGH);
-    for(int i = 0; i < MEASUREMENTS; ++i) {
-        measurementsReal[i] = measureMicrophoneDigital() >> 2;
-        measurementsImag[i] = 0;
+#define KERNEL_SIZE 5
+
+double ker[KERNEL_SIZE] = {1,2,0,-2,-1};
+double ringBuffer[KERNEL_SIZE] = {0,0,0,0,0};
+int bufferIx = 0;
+
+void micLoop() {
+
+    unsigned long start = millis();
+    unsigned long windowSize = 20;
+    double micMeasurement = 0;
+    double sumMicSquared = 0;
+    int numMeasurements = 0;
+    while(millis() < start + windowSize) {
+        micMeasurement = measureMicrophoneAnalogAbs();
+        sumMicSquared += micMeasurement * micMeasurement;
+        ++numMeasurements;
+        if(numMeasurements > 1000) {
+            break;
+        }
     }
-    digitalWrite(LED_BUILTIN, LOW);
+    double averageMicPower = sumMicSquared / numMeasurements;
+    ringBuffer[bufferIx] = averageMicPower;
 
-    // fix_fft(char fr[], char fi[], int m, int inverse);
-    fix_fft(measurementsReal, measurementsImag, MEASUREMENTS_EXP, 0);
+    double convolutionResult = 0;
+    for(int i = 0; i < KERNEL_SIZE; ++i) {
+        convolutionResult += ker[i] * ringBuffer[(i + bufferIx) % KERNEL_SIZE];
+    }
+    bufferIx = (bufferIx + 1) % KERNEL_SIZE;
 
-    Serial.println((int) measurementsReal[3]);
+    int result = 1023 * sigmoid(convolutionResult, 0.25, 25);
+    Serial.println(result);
+    analogWrite(ledPin, result);
 }
