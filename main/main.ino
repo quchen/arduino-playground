@@ -47,37 +47,54 @@ double sigmoid(double x, double slope, double center) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#define KERNEL_SIZE 5
+#define KERNEL_SIZE 3
 
-double ker[KERNEL_SIZE] = {1,2,0,-2,-1};
-double ringBuffer[KERNEL_SIZE] = {0,0,0,0,0};
+double ker[KERNEL_SIZE] = {1,0,-1};
+double ringBuffer[KERNEL_SIZE] = {0,0,0};
 int bufferIx = 0;
 
 void micLoop() {
 
-    unsigned long start = millis();
-    unsigned long windowSize = 20;
-    double micMeasurement = 0;
-    double sumMicSquared = 0;
-    int numMeasurements = 0;
-    while(millis() < start + windowSize) {
-        micMeasurement = measureMicrophoneAnalogAbs();
-        sumMicSquared += micMeasurement * micMeasurement;
-        ++numMeasurements;
-        if(numMeasurements > 1000) {
-            break;
+    // Measure average microphone power (amplitude^2)j over a time interval
+    {
+        unsigned long start = millis();
+        unsigned long windowSize = 50;
+        double micMeasurement = 0;
+        double sumMicSquared = 0;
+        int numMeasurements = 0;
+        while(millis() < start + windowSize) {
+            micMeasurement = measureMicrophoneAnalogAbs();
+            sumMicSquared += micMeasurement * micMeasurement;
+            ++numMeasurements;
+            if(numMeasurements > 1000) {
+                break;
+            }
         }
+        double averageMicPower = sumMicSquared / numMeasurements;
+        ringBuffer[bufferIx] = averageMicPower;
+        // Serial.print(averageMicPower);
     }
-    double averageMicPower = sumMicSquared / numMeasurements;
-    ringBuffer[bufferIx] = averageMicPower;
 
+    // Edge detection
     double convolutionResult = 0;
-    for(int i = 0; i < KERNEL_SIZE; ++i) {
-        convolutionResult += ker[i] * ringBuffer[(i + bufferIx) % KERNEL_SIZE];
+    {
+        for(int i = 0; i < KERNEL_SIZE; ++i) {
+            convolutionResult += ker[i] * ringBuffer[(i + bufferIx) % KERNEL_SIZE];
+        }
+        bufferIx = (bufferIx + 1) % KERNEL_SIZE;
     }
-    bufferIx = (bufferIx + 1) % KERNEL_SIZE;
 
-    int result = 1023 * sigmoid(convolutionResult, 0.25, 25);
-    Serial.println(result);
+
+    Serial.print(",");
+    Serial.print(convolutionResult);
+
+
+    int result = 1023 * sigmoid(convolutionResult, 4, 4);
     analogWrite(ledPin, result);
+
+
+    Serial.print(",");
+    Serial.print(4 * sigmoid(convolutionResult, 4, 4));
+
+    Serial.println("");
 }
