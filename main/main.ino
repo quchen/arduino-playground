@@ -1,3 +1,5 @@
+// With direct audio input: low pass 75 ohm
+
 const int ledPin = 3;
 const int microphonePin = A0;
 double microphoneOffset = 0;
@@ -16,6 +18,7 @@ void setup() {
 
 void loop() {
     micLoop();
+    // measureLoop();
 }
 
 void gaugeMicrophoneAnalog(unsigned long measureWindowMillis) {
@@ -56,51 +59,58 @@ const double longTermSmoothingAlpha = 0.025;
 double longTermAverage = 1;
 const double ledThreshold = 1;
 
+double ledFuel = 0;
+
 void micLoop() {
 
     // Measure average microphone power (amplitude^2)j over a time interval
-    {
-        unsigned long start = millis();
-        unsigned long windowSize = 50;
-        double micMeasurement = 0;
-        double sumMicSquared = 0;
-        int numMeasurements = 0;
-        while(millis() < start + windowSize) {
-            micMeasurement = measureMicrophoneAnalogAbs();
-            sumMicSquared += micMeasurement * micMeasurement;
-            ++numMeasurements;
-            if(numMeasurements > 1000) {
-                break;
-            }
+    unsigned long start = millis();
+    unsigned long windowSize = 25;
+    double micMeasurement = 0;
+    double sumMicSquared = 0;
+    int numMeasurements = 0;
+    while(millis() < start + windowSize) {
+        micMeasurement = measureMicrophoneAnalog();
+        sumMicSquared += micMeasurement * micMeasurement;
+        ++numMeasurements;
+        if(numMeasurements > 1000) {
+            break;
         }
-        double averageMicPower = sumMicSquared / numMeasurements;
-        longTermAverage = longTermAverage + longTermSmoothingAlpha * (averageMicPower - longTermAverage);
-        ringBuffer[bufferIx] = averageMicPower / longTermAverage;
     }
+    double averageMicPower = sumMicSquared / numMeasurements;
+    longTermAverage = longTermAverage + longTermSmoothingAlpha * (averageMicPower - longTermAverage);
+    ringBuffer[bufferIx] = averageMicPower / longTermAverage;
 
     // Edge detection
-    double convolutionResult = 0;
+    double slope = 0;
     {
         for(int i = 0; i < KERNEL_SIZE; ++i) {
-            convolutionResult += ker[i] * ringBuffer[(i + bufferIx) % KERNEL_SIZE];
+            slope += ker[i] * ringBuffer[(i + bufferIx) % KERNEL_SIZE];
         }
         bufferIx = (bufferIx + 1) % KERNEL_SIZE;
     }
 
+    double slopeN = sigmoid(slope, 10, ledThreshold);
 
+    ledFuel = 0.9 * ledFuel + slopeN;
+    int ledValue;
+    if(ledFuel > 0.5) {
+        ledValue = constrain((ledFuel - 0.5) * 255, 0, 255);
+        analogWrite(ledPin, ledValue);
+    } else {
+        digitalWrite(ledPin, LOW);
+    }
 
-
-    double result = sigmoid(convolutionResult, 10, ledThreshold);
-    analogWrite(ledPin, 1023 * result);
-
-
-    Serial.print(convolutionResult);
+    Serial.print(slope);
+    // Serial.print(",");
+    // Serial.print(longTermAverage);
     Serial.print(",");
-    Serial.print(ledThreshold);
-    Serial.print(",");
-    Serial.print(5 * result);
-    Serial.print(",");
-    Serial.print(longTermAverage);
+    Serial.print(ledFuel);
 
     Serial.println("");
+}
+
+void measureLoop() {
+    double val = measureMicrophoneAnalog();
+    Serial.println(val);
 }
