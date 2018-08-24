@@ -52,6 +52,9 @@ double sigmoid(double x, double slope, double center) {
 double ker[KERNEL_SIZE] = {1,0,-1};
 double ringBuffer[KERNEL_SIZE] = {0,0,0};
 int bufferIx = 0;
+const double longTermSmoothingAlpha = 0.025;
+double longTermAverage = 1;
+const double ledThreshold = 1;
 
 void micLoop() {
 
@@ -71,8 +74,8 @@ void micLoop() {
             }
         }
         double averageMicPower = sumMicSquared / numMeasurements;
-        ringBuffer[bufferIx] = averageMicPower;
-        // Serial.print(averageMicPower);
+        longTermAverage = longTermAverage + longTermSmoothingAlpha * (averageMicPower - longTermAverage);
+        ringBuffer[bufferIx] = averageMicPower / longTermAverage;
     }
 
     // Edge detection
@@ -85,16 +88,19 @@ void micLoop() {
     }
 
 
-    Serial.print(",");
+
+
+    double result = sigmoid(convolutionResult, 10, ledThreshold);
+    analogWrite(ledPin, 1023 * result);
+
+
     Serial.print(convolutionResult);
-
-
-    int result = 1023 * sigmoid(convolutionResult, 4, 4);
-    analogWrite(ledPin, result);
-
-
     Serial.print(",");
-    Serial.print(4 * sigmoid(convolutionResult, 4, 4));
+    Serial.print(ledThreshold);
+    Serial.print(",");
+    Serial.print(5 * result);
+    Serial.print(",");
+    Serial.print(longTermAverage);
 
     Serial.println("");
 }
